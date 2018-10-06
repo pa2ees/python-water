@@ -12,6 +12,37 @@ PAYLOAD_TYPE_ECHO = 0
 PAYLOAD_TYPE_SETTINGS = 1
 PAYLOAD_TYPE_STATUS = 2
 
+class Payload(object):
+    def __init__(self,
+                 payload_len,
+                 payload_type,
+                 payload_opcode=None,
+                 payload_command=None,
+                 payload_value=None,
+                 payload_byte_arr=None):
+        self.length = payload_len
+        self.pl_type = payload_type
+        self.opcode = payload_opcode
+        self.command = payload_command
+        self.value = payload_value
+        self.byte_arr = payload_byte_arr
+        self.valid = False
+        if self.opcode != None and self.command != None and self.value != None:
+            self.byte_arr = bytes(struct.pack('<BBH', self.opcode, self.command, self.value), 'UTF-8')
+            self.valid = True
+        elif self.byte_arr != None:
+            if self.length != len(self.byte_arr):
+                log.error("Length given ({}) and length of array ({}) do not match!".format(self.length, len(self.byte_arr)))
+                return
+            if self.pl_type == PAYLOAD_TYPE_SETTINGS or self.pl_type == PAYLOAD_TYPE_STATUS:
+                if self.length != 4:
+                    log.error("Incorrect array length ({}) for payload type ({})".format(self.length, self.pl_type))
+                    return
+                (self.opcode, self.command, self.value) = struct.unpack('<BBH', self.byte_arr)
+            self.valid = True
+
+        self.checksum = (256 - (sum(self.byte_arr) & 0xFF)) & 0xFF
+        
 
 class Packet(object):
     PACKET_START_FLAG_OFFSET = 0
@@ -20,29 +51,62 @@ class Packet(object):
     PACKET_HEADER_CHECKSUM_OFFSET = 4
     PACKET_PAYLOAD_OFFSET = 5
     
-    def __init__(self, payload_type=None, payload_data=None, byte_arr=None):
-        self.payload_type = payload_type
-        self.payload_data = payload_data
-        self.byte_arr = byte_arr
+    def __init__(self, payload_type=None, payload=None, payload_data=None, byte_arr=None):
+        self.payload_type = payload_type # this is a byte containing the type of payload
+        self.payload_data = payload_data # this is a byte array of all payload data (4 bytes)
+        self.byte_arr = byte_arr # this is a byte array of an entire packet
         self.valid = False
+        self.payload = payload #this is a Payload object
 
         if self.payload_type != None and self.payload_data != None:
-            self.byte_arr = self._create_packet(self.payload_type, self.payload_data)
+            # we have type and data, construct a Payload object
+            self.payload = Payload(len(self.payload_data), self.payload_type, payload_byte_arr=self.payload_data)
+            if not self.payload.valid:
+                log.error("Payload error: {}".format(self.payload.byte_arr))
+                return
+            self.byte_arr = self._create_byte_arr(self.payload_type, self.payload)
+            #self.byte_arr = self._create_packet(self.payload_type, self.payload_data)
+
             self.valid = True
+
+        elif self.payload_type != None and self.payload != None:
+            if type(self.payload) != Payload:
+                return
+            if not self.payload.valid:
+                return
+                            
+            self.byte_arr = self._create_byte_arr(self.payload_type, self.payload)
+
         elif self.byte_arr != None:
             self.valid = self.create_from_byte_arr(self.byte_arr)
 
-    def _create_packet(self, payload_type, payload_data):
-        packet = []
-        packet.append(0xAB)
-        packet.append(payload_type)
-        packet.append(len(payload_data) & 0xFF)
-        packet.append((len(payload_data) >> 8) & 0xFF)
-        packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-        packet.extend(payload_data)
-        packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-        packet.append(0xBA)
-        return bytes(packet)
+    def _create_byte_arr(self, payload_type, payload):
+
+        header = struct.pack('<BBH',
+                             0xAB,
+                             payload_type,
+                             payload.length)
+
+        header_cksm = bytes([(256 - (sum(header) & 0xFF)) & 0xFF])
+
+        packet = header + header_cksm + payload.byte_arr + bytes([payload.checksum, 0xBA])
+        
+                    
+        # packet = []
+        # packet.append(0xAB)
+        # packet.append(payload_type)
+        # packet.append(len(payload.byte_arr) & 0xFF)
+        # packet.append((len(payload.byte_arr) >> 8) & 0xFF)
+        # packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
+        # packet.extend(payload.byte_arr)
+        # packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
+        # packet.append(0xBA)
+
+        # log.debug("packet_test: {}".format(packet_test))
+        # log.debug("packet     : {}".format(bytes(packet)))
+
+        # return bytes(packet)
+        return packet
 
     def create_from_byte_arr(self, byte_arr):
         self.byte_arr = byte_arr
@@ -53,9 +117,12 @@ class Packet(object):
         
         self.payload_type = self.byte_arr[self.PACKET_PAYLOAD_TYPE_OFFSET]
 
-        payload_len = struct.unpack_from('<H', self.byte_arr, self.PACKET_PAYLOAD_LEN_OFFSET)[0]
-        self.payload_data = self.byte_arr[self.PACKET_PAYLOAD_OFFSET:self.PACKET_PAYLOAD_OFFSET+payload_len]
-
+        self.payload_len = struct.unpack_from('<H', self.byte_arr, self.PACKET_PAYLOAD_LEN_OFFSET)[0]
+        self.payload_data = self.byte_arr[self.PACKET_PAYLOAD_OFFSET:self.PACKET_PAYLOAD_OFFSET+self.payload_len]
+        self.payload = Payload(self.payload_len, self.payload_type, payload_byte_arr=self.payload_data)
+        if not self.payload.valid:
+            log.error("Payload error: {}".format(self.payload.byte_arr))
+            return False
         return True
         
 
@@ -300,7 +367,7 @@ SETTINGS_SAVE_ONE = 1
 SETTINGS_TANK_PUMP_TURN_ON_LEVEL = 0
 SETTINGS_TANK_PUMP_TURN_OFF_LEVEL = 1
 
-STATUS_OP_READ = 0
+STATUS_OP_READ = 3
 
 STATUS_TEMP_F = 0
 STATUS_TANK_LEVEL = 1
@@ -361,61 +428,94 @@ class Pump(object):
             self.ser = serial.Serial("/dev/ttyUSB0", baudrate=57600, timeout=0.1)
 
     def echo(self, data_arr=b'abc'):
-        pkt = self.create_packet(data_arr, PAYLOAD_TYPE_ECHO)
+        pkt = Packet(payload_type=PAYLOAD_TYPE_ECHO, payload_data=data_arr)
+        if not pkt.valid:
+            log.error("Packet error: {}".format(pkt.byte_arr))
+            return
         self.send_packet(pkt.byte_arr)
         resp_pkt = Packet(byte_arr=self.read_response())
         return resp_pkt.payload_data
 
+
     def read_setting(self, setting):
-        pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=[SETTINGS_OP_READ, setting, 3, 3])
+        pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_READ, setting, 3, 3]))
+        if not pkt.valid:
+            log.error("Packet error: {}".format(pkt.byte_arr))
+            return
         self.send_packet(pkt.byte_arr)
-        return self.read_response()
+        resp_pkt = Packet(byte_arr=self.read_response())
+        return resp_pkt.payload.value
 
     def write_setting(self, setting, val):
-        pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=[SETTINGS_OP_WRITE, setting, val & 0xFF, (val >> 8) & 0xFF])
+        pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_WRITE, setting, val & 0xFF, (val >> 8) & 0xFF]))
+        if not pkt.valid:
+            log.error("Packet error: {}".format(pkt.byte_arr))
+            return
         self.send_packet(pkt.byte_arr)
-        return self.read_response()
+        resp_pkt = Packet(byte_arr=self.read_response())
+        return resp_pkt.payload.value
 
     def save_settings_to_eeprom(self, setting=None):
         if setting == None:
             # saving all settings
-            pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=[SETTINGS_OP_SAVE, SETTINGS_SAVE_ALL, 0, 0])
+            pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_SAVE, SETTINGS_SAVE_ALL, 0, 0]))
+            if not pkt.valid:
+                log.error("Packet error: {}".format(pkt.byte_arr))
+                return
             self.send_packet(pkt.byte_arr)
-            return self.read_response()
+            resp_pkt = Packet(byte_arr=self.read_response())
+            return resp_pkt.payload.value
 
         else:
-            pkt = Packet(payload_type=PYLOAD_TYPE_SETTINGS, payload_data=[SETTINGS_OP_SAVE, SETTINGS_SAVE_ONE, setting & 0xFF, (setting >> 8) & 0xFF])
+            pkt = Packet(payload_type=PYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_SAVE, SETTINGS_SAVE_ONE, setting & 0xFF, (setting >> 8) & 0xFF]))
+            if not pkt.valid:
+                log.error("Packet error: {}".format(pkt.byte_arr))
+                return
             self.send_packet(pkt.byte_arr)
-            return self.read_response()
+            resp_pkt = Packet(byte_arr=self.read_response())
+            return resp_pkt.payload.value
         
     def load_settings_from_eeprom(self, setting=None):
         if setting == None:
             # load all settings
-            pkt = Packet(payload_data=[SETTINGS_OP_LOAD, SETTINGS_LOAD_ALL, 0, 0], payload_type=PAYLOAD_TYPE_SETTINGS)
+            pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_LOAD, SETTINGS_LOAD_ALL, 0, 0]))
+            if not pkt.valid:
+                log.error("Packet error: {}".format(pkt.byte_arr))
+                return
             self.send_packet(pkt.byte_arr)
-            return self.read_response()
+            resp_pkt = Packet(byte_arr=self.read_response())
+            return resp_pkt.payload.value
+
         else:
-            pkt = Packet(payload_data=[SETTINGS_OP_LOAD, SETTINGS_LOAD_ONE, setting & 0xFF, (setting >> 8) & 0xFF], payload_type=PAYLOAD_TYPE_SETTINGS)
+            pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_LOAD, SETTINGS_LOAD_ONE, setting & 0xFF, (setting >> 8) & 0xFF]))
+            if not pkt.valid:
+                log.error("Packet error: {}".format(pkt.byte_arr))
+                return
             self.send_packet(pkt.byte_arr)
-            return self.read_response
+            resp_pkt = Packet(byte_arr=self.read_response())
+            return resp_pkt.payload.value
 
     def get_status(self, status):
-        pkt = Packet(payload_type=PAYLOAD_TYPE_STATUS, payload_data=[STATUS_OP_READ, status, 2, 3])
+        pkt = Packet(payload_type=PAYLOAD_TYPE_STATUS, payload_data=bytes([STATUS_OP_READ, status, 2, 3]))
+        if not pkt.valid:
+            log.error("Packet error: {}".format(pkt.byte_arr))
+            return
         self.send_packet(pkt.byte_arr)
-        return self.read_response()
+        resp_pkt = Packet(byte_arr=self.read_response())
+        return resp_pkt.payload.value
 
 
-    def create_packet(self, send_data, data_type):
-        packet = []
-        packet.append(0xAB)
-        packet.append(data_type)
-        packet.append(len(send_data) & 0xFF)
-        packet.append((len(send_data) >> 8) & 0xFF)
-        packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-        packet.extend(send_data)
-        packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-        packet.append(0xBA)
-        return packet
+    # def create_packet(self, send_data, data_type):
+    #     packet = []
+    #     packet.append(0xAB)
+    #     packet.append(data_type)
+    #     packet.append(len(send_data) & 0xFF)
+    #     packet.append((len(send_data) >> 8) & 0xFF)
+    #     packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
+    #     packet.extend(send_data)
+    #     packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
+    #     packet.append(0xBA)
+    #     return packet
 
     def send_packet(self, pkt):
         self.clear_input_buffer()
