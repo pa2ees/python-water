@@ -13,6 +13,11 @@ PAYLOAD_TYPE_SETTINGS = 1
 PAYLOAD_TYPE_STATUS = 2
 
 class Payload(object):
+    """
+    Payload class
+
+    Class for handling the payload section of a packet
+    """
     def __init__(self,
                  payload_len,
                  payload_type,
@@ -27,9 +32,13 @@ class Payload(object):
         self.value = payload_value
         self.byte_arr = payload_byte_arr
         self.valid = False
+
+        # got opcode, command, and value.  Create byte_array
         if self.opcode != None and self.command != None and self.value != None:
             self.byte_arr = bytes(struct.pack('<BBH', self.opcode, self.command, self.value), 'UTF-8')
             self.valid = True
+
+        # got byte_array.  If a settings or status packet, populate opcode, command, and value
         elif self.byte_arr != None:
             if self.length != len(self.byte_arr):
                 log.error("Length given ({}) and length of array ({}) do not match!".format(self.length, len(self.byte_arr)))
@@ -41,10 +50,16 @@ class Payload(object):
                 (self.opcode, self.command, self.value) = struct.unpack('<BBH', self.byte_arr)
             self.valid = True
 
+        # compute checksum
         self.checksum = (256 - (sum(self.byte_arr) & 0xFF)) & 0xFF
         
 
 class Packet(object):
+    """
+    Packet class
+
+    Class for handling packets sent to, and received from, the water controller
+    """
     PACKET_START_FLAG_OFFSET = 0
     PACKET_PAYLOAD_TYPE_OFFSET = 1
     PACKET_PAYLOAD_LEN_OFFSET = 2
@@ -58,8 +73,8 @@ class Packet(object):
         self.valid = False
         self.payload = payload #this is a Payload object
 
+        # we have type and data, construct a Payload object, and populate the byte_array
         if self.payload_type != None and self.payload_data != None:
-            # we have type and data, construct a Payload object
             self.payload = Payload(len(self.payload_data), self.payload_type, payload_byte_arr=self.payload_data)
             if not self.payload.valid:
                 log.error("Payload error: {}".format(self.payload.byte_arr))
@@ -69,6 +84,7 @@ class Packet(object):
 
             self.valid = True
 
+        # Got payload type, and a payload object. Populate the byte_array
         elif self.payload_type != None and self.payload != None:
             if type(self.payload) != Payload:
                 return
@@ -77,6 +93,7 @@ class Packet(object):
                             
             self.byte_arr = self._create_byte_arr(self.payload_type, self.payload)
 
+        # Got a byte_array.  validate the byte_array, and create a packet and data from it.
         elif self.byte_arr != None:
             self.valid = self.create_from_byte_arr(self.byte_arr)
 
@@ -88,24 +105,8 @@ class Packet(object):
                              payload.length)
 
         header_cksm = bytes([(256 - (sum(header) & 0xFF)) & 0xFF])
-
         packet = header + header_cksm + payload.byte_arr + bytes([payload.checksum, 0xBA])
-        
-                    
-        # packet = []
-        # packet.append(0xAB)
-        # packet.append(payload_type)
-        # packet.append(len(payload.byte_arr) & 0xFF)
-        # packet.append((len(payload.byte_arr) >> 8) & 0xFF)
-        # packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-        # packet.extend(payload.byte_arr)
-        # packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-        # packet.append(0xBA)
 
-        # log.debug("packet_test: {}".format(packet_test))
-        # log.debug("packet     : {}".format(bytes(packet)))
-
-        # return bytes(packet)
         return packet
 
     def create_from_byte_arr(self, byte_arr):
@@ -133,7 +134,6 @@ class Packet(object):
         data_bytes_received = 0
         
         for val in byte_arr:
-        #val = ord(val)
 
             log.debug("Got val: {}".format(val))
             if state == "idle":
@@ -183,7 +183,6 @@ class Packet(object):
                 if val == 0xBA:
                     log.debug("Got full packet!")
                     log.debug(" ".join(["{:X}".format(val) for val in packet]))
-                    #handle_packet(packet)
                     state = "idle"
                     return True
                 else:
@@ -196,155 +195,7 @@ class Packet(object):
         return False
 
 
-# def create_packet(send_data, data_type):
-#     packet = []
-#     packet.append(0xAB)
-#     packet.append(data_type)
-#     packet.append(len(send_data) & 0xFF)
-#     packet.append((len(send_data) >> 8) & 0xFF)
-#     packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-#     packet.extend(send_data)
-#     packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-#     packet.append(0xBA)
-#     return packet
-    
-# def parse_data(data):
-#     state = "idle"
-#     packet = []
-#     data_len = 0
-#     data_bytes_received = 0
-
-#     for val in data:
-#         #val = ord(val)
-            
-#         log.debug("Got val: {}".format(val))
-#         if state == "idle":
-#             data_len = 0
-#             data_bytes_received = 0
-#             packet = []
-#             if val == 0xAB:
-#                 state = "got_start"
-#                 packet.append(val)
-#             else:
-#                 print(val)
-#                 state = "idle"
-#         elif state == "got_start":
-#             packet.append(val)
-#             state = "got_type"
-#         elif state == "got_type":
-#             packet.append(val)
-#             state = "got_length_l"        
-#         elif state == "got_length_l":
-#             data_len = (val * 256) + packet[-1]
-#             packet.append(val)
-#             state = "got_length_h"
-            
-#         elif state == "got_length_h":
-#             packet.append(val)
-#             if sum(packet) & 0xFF != 0x00:
-#                 print("Packet Header is invalid!")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 state = "idle"
-#             else:
-#                 state = "got_header_checksum"
-#         elif state == "got_header_checksum":
-#             packet.append(val)
-#             data_bytes_received += 1
-#             if data_bytes_received >= data_len:
-#                 state = "got_payload"
-#         elif state == "got_payload":
-#             packet.append(val)
-#             if sum(packet) & 0xFF != 0x00:
-#                 print("Packet is invalid!")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 state = "idle"
-#             else:
-#                 state = "got_checksum"
-#         elif state == "got_checksum":
-#             packet.append(val)
-#             if val == 0xBA:
-#                 print("Got full packet!")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 handle_packet(packet)
-#                 state = "idle"
-#             else:
-#                 print("Well, this is weird...")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 state = "idle"
-#         else:
-#             state = "idle"
-
-
-# def receive_data(ser):
-#     state = "idle"
-#     packet = []
-#     data_len = 0
-#     data_bytes_received = 0
-#     while True:
-#         val = ser.read()
-#         if len(val) == 0:
-#             continue
-#         val = ord(val)
-
-            
-#         #print("Got val: {}".format(val))
-#         if state == "idle":
-#             data_len = 0
-#             data_bytes_received = 0
-#             packet = []
-#             if val == 0xAB:
-#                 state = "got_start"
-#                 packet.append(val)
-#             else:
-#                 state = "idle"
-#         elif state == "got_start":
-#             packet.append(val)
-#             state = "got_type"
-#         elif state == "got_type":
-#             packet.append(val)
-#             state = "got_length_l"        
-#         elif state == "got_length_l":
-#             data_len = (val * 256) + packet[-1]
-#             packet.append(val)
-#             state = "got_length_h"
-            
-#         elif state == "got_length_h":
-#             packet.append(val)
-#             if sum(packet) & 0xFF != 0x00:
-#                 print("Packet Header is invalid!")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 state = "idle"
-#             else:
-#                 state = "got_header_checksum"
-#         elif state == "got_header_checksum":
-#             packet.append(val)
-#             data_bytes_received += 1
-#             if data_bytes_received >= data_len:
-#                 state = "got_payload"
-#         elif state == "got_payload":
-#             packet.append(val)
-#             if sum(packet) & 0xFF != 0x00:
-#                 print("Packet is invalid!")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 state = "idle"
-#             else:
-#                 state = "got_checksum"
-#         elif state == "got_checksum":
-#             packet.append(val)
-#             if val == 0xBA:
-#                 print("Got full packet!")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 handle_packet(packet)
-#                 state = "idle"
-#             else:
-#                 print("Well, this is weird...")
-#                 print(" ".join(["{:X}".format(val) for val in packet]))
-#                 state = "idle"
-#         else:
-#             state = "idle"
-
-
-#TODO: update this, look into payload for temp and level data
+# TODO: move this functionality into the Pump class
 def handle_packet(packet):
     if packet[1] == 0x00: #temperature packet
         temperature = packet[8] * 256 + packet[7]
@@ -352,6 +203,9 @@ def handle_packet(packet):
     elif packet[1] == 0x01: #Level packet
         level = packet[8] * 256 + packet[7]
         print("Level: {}".format(level))
+
+def get_pump_turn_on_level(ser):
+    pkt = create_packet([SETTINGS_OP_READ,SETTINGS_TANK_PUMP_TURN_ON_LEVEL,3,3], PACKET_TYPE_SETTINGS)
 
 SETTINGS_OP_LOAD = 0
 SETTINGS_OP_SAVE = 1
@@ -372,55 +226,8 @@ STATUS_OP_READ = 3
 STATUS_TEMP_F = 0
 STATUS_TANK_LEVEL = 1
 
-def get_pump_turn_on_level(ser):
-    pkt = create_packet([SETTINGS_OP_READ,SETTINGS_TANK_PUMP_TURN_ON_LEVEL,3,3], PACKET_TYPE_SETTINGS)
-
-# def clear_input_buffer(ser):
-#     ser.flushInput()
-
-# def send_packet(ser, pkt):
-#     clear_input_buffer(ser)
-#     ser.write(pkt)
-#     resp_arr = ser.read(1000)
-#     return resp_arr
-    
-# def read_settings(ser, setting):
-#     pkt = create_packet([SETTINGS_OP_READ, setting, 3, 3], PACKET_TYPE_SETTINGS)
-#     return parse_data(send_packet(ser, pkt))
-
-# def write_settings(ser, setting, val):
-#     pkt = create_packet([SETTINGS_OP_WRITE, setting, val & 0xFF, (val >> 8) & 0xFF], PACKET_TYPE_SETTINGS)
-#     return send_packet(ser, pkt)
-
-
-# def save_settings_to_eeprom(ser, setting=None):
-#     if setting == None:
-#         # saving all settings
-#         pkt = create_packet([SETTINGS_OP_SAVE, SETTINGS_SAVE_ALL, 0, 0], PACKET_TYPE_SETTINGS)
-#         return send_packet(ser, pkt)
-#     else:
-#         pkt = create_packet([SETTINGS_OP_SAVE, SETTINGS_SAVE_ONE, setting & 0xFF, (setting >> 8) & 0xFF], PACKET_TYPE_SETTINGS)
-#         return send_packet(ser, pkt)
-
-# def load_settings_from_eeprom(ser, setting=None):
-#     if setting == None:
-#         # load all settings
-#         pkt = create_packet([SETTINGS_OP_LOAD, SETTINGS_LOAD_ALL, 0, 0], PACKET_TYPE_SETTINGS)
-#         return send_packet(ser, pkt)
-#     else:
-#         pkt = create_packet([SETTINGS_OP_LOAD, SETTINGS_LOAD_ONE, setting & 0xFF, (setting >> 8) & 0xFF], PACKET_TYPE_SETTINGS)
-#         return send_packet(ser, pkt)
-        
-
-# def echo_packet(ser, arr):
-#     pkt = create_packet(arr, PACKET_TYPE_ECHO)
-#     return send_packet(ser, pkt)
-
-
-# def get_status(ser, status):
-#     pkt = create_packet([STATUS_OP_READ, status, 2, 3], PACKET_TYPE_STATUS)
-#     return parse_data(send_packet(ser, pkt)) 
-
+# TODO: Add conversions for temp (deg f) and level (in inches)
+# TODO: Clean up each of the functions to not repeat so much code.
 class Pump(object):
     def __init__(self, ser=None):
         self.ser = ser
@@ -505,18 +312,6 @@ class Pump(object):
         return resp_pkt.payload.value
 
 
-    # def create_packet(self, send_data, data_type):
-    #     packet = []
-    #     packet.append(0xAB)
-    #     packet.append(data_type)
-    #     packet.append(len(send_data) & 0xFF)
-    #     packet.append((len(send_data) >> 8) & 0xFF)
-    #     packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-    #     packet.extend(send_data)
-    #     packet.append((256 - ((sum(packet) & 0xFF))) & 0xFF)
-    #     packet.append(0xBA)
-    #     return packet
-
     def send_packet(self, pkt):
         self.clear_input_buffer()
         self.ser.write(pkt)
@@ -529,60 +324,60 @@ class Pump(object):
         self.ser.flushInput()
 
 
-class Pump_old():
-    def __init__(self, com = None, ser = None):
-        if not com:
-            com = "COM4"
-        if not ser:
-            self.ser = serial.Serial(com, 9600, timeout=0.1)
-        else:
-            self.ser = ser
+# class Pump_old():
+#     def __init__(self, com = None, ser = None):
+#         if not com:
+#             com = "COM4"
+#         if not ser:
+#             self.ser = serial.Serial(com, 9600, timeout=0.1)
+#         else:
+#             self.ser = ser
 
-    def read_dump(self):
-        print(self.ser.read(1000))
+#     def read_dump(self):
+#         print(self.ser.read(1000))
 
-    def get_data_wait(self, wait_time = 5, retry_time = 1):
-        for i in range(wait_time):
-            if self.get_data() != -1:
-                return
-            time.sleep(retry_time)
+#     def get_data_wait(self, wait_time = 5, retry_time = 1):
+#         for i in range(wait_time):
+#             if self.get_data() != -1:
+#                 return
+#             time.sleep(retry_time)
             
 
-    def write_data(self):
-        #printval = '|'.join(self.valse['val01']
-        print('writing: ', '|'.join(self.data_split))
-        self.ser.write('|'.join(self.data_split))
+#     def write_data(self):
+#         #printval = '|'.join(self.valse['val01']
+#         print('writing: ', '|'.join(self.data_split))
+#         self.ser.write('|'.join(self.data_split))
 
-    def get_data(self):
-        self.data = self.ser.read(1000)
-        if len(self.data) == 0:
-            print("No Data!")
-            return -1
-        self.data_line = self.data.split("\r\n")
-        if len(self.data_line) > 1:
-            self.data_line = self.data_line[-2]
-        else:
-            self.data_line = self.data_line[0]
-        self.data_split = self.data_line.split('|')
-        if len(self.data_split) != 16:
-            print("Bad Data!")
-            return
-        self.vals = {}
-        self.vals['val01'] = self.data_split[0]
-        self.vals['val02'] = self.data_split[1]
-        self.vals['val03'] = self.data_split[2]
-        self.vals['val04'] = self.data_split[3]
-        self.vals['val05'] = self.data_split[4]
-        self.vals['val06'] = self.data_split[5]
-        self.vals['val07'] = self.data_split[6]
-        self.vals['val08'] = self.data_split[7]
-        self.vals['val09'] = self.data_split[8]
-        self.vals['val10'] = self.data_split[9]
-        self.vals['val11'] = self.data_split[10]
-        self.vals['val12'] = self.data_split[11]
-        self.vals['val13'] = self.data_split[12]
-        self.vals['val14'] = self.data_split[13]
-        self.vals['val15'] = self.data_split[14]
-        self.vals['val16'] = self.data_split[15]
+#     def get_data(self):
+#         self.data = self.ser.read(1000)
+#         if len(self.data) == 0:
+#             print("No Data!")
+#             return -1
+#         self.data_line = self.data.split("\r\n")
+#         if len(self.data_line) > 1:
+#             self.data_line = self.data_line[-2]
+#         else:
+#             self.data_line = self.data_line[0]
+#         self.data_split = self.data_line.split('|')
+#         if len(self.data_split) != 16:
+#             print("Bad Data!")
+#             return
+#         self.vals = {}
+#         self.vals['val01'] = self.data_split[0]
+#         self.vals['val02'] = self.data_split[1]
+#         self.vals['val03'] = self.data_split[2]
+#         self.vals['val04'] = self.data_split[3]
+#         self.vals['val05'] = self.data_split[4]
+#         self.vals['val06'] = self.data_split[5]
+#         self.vals['val07'] = self.data_split[6]
+#         self.vals['val08'] = self.data_split[7]
+#         self.vals['val09'] = self.data_split[8]
+#         self.vals['val10'] = self.data_split[9]
+#         self.vals['val11'] = self.data_split[10]
+#         self.vals['val12'] = self.data_split[11]
+#         self.vals['val13'] = self.data_split[12]
+#         self.vals['val14'] = self.data_split[13]
+#         self.vals['val15'] = self.data_split[14]
+#         self.vals['val16'] = self.data_split[15]
             
         
