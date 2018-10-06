@@ -223,7 +223,7 @@ SETTINGS_TANK_PUMP_TURN_OFF_LEVEL = 1
 
 STATUS_OP_READ = 3
 
-STATUS_TEMP_F = 0
+STATUS_TEMP = 0
 STATUS_TANK_LEVEL = 1
 
 # TODO: Add conversions for temp (deg f) and level (in inches)
@@ -236,81 +236,102 @@ class Pump(object):
 
     def echo(self, data_arr=b'abc'):
         pkt = Packet(payload_type=PAYLOAD_TYPE_ECHO, payload_data=data_arr)
-        if not pkt.valid:
-            log.error("Packet error: {}".format(pkt.byte_arr))
-            return
-        self.send_packet(pkt.byte_arr)
-        resp_pkt = Packet(byte_arr=self.read_response())
+        resp_pkt = self._send_and_receive_packet(pkt)
         return resp_pkt.payload_data
 
+    #### Helper functions ####
+
+    def read_curr_temp(self):
+        val = self.get_status(STATUS_TEMP)
+        # do conversion to degrees f here
+        return val
+
+    def read_tank_level(self):
+        val = self.get_status(STATUS_TANK_LEVEL)
+        # do conversion to inches here
+        return val
+
+
+    def read_setting_tank_pump_turn_on_level(self):
+        val = self.read_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL)
+        # do conversion to inches here
+        return val.payload.value
+
+    def read_setting_tank_pump_turn_off_level(self):
+        val = self.read_setting(SETTINGS_TANK_PUMP_TURN_OFF_LEVEL)
+        # do conversion to inches here
+        return val.payload.value
+
+    def write_setting_tank_pump_turn_on_level(self, val):
+        #do conversion from inches here
+        stg_val = self.write_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL, val)
+        if stg_val.payload.value == val:
+            print("Setting 'turn on level' programmed successfully!")
+        else:
+            print("Setting 'turn on level' programming failed!")
+
+    def write_setting_tank_pump_turn_off_level(self, val):
+        #do conversion from inches here
+        stg_val = self.write_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL, val)
+        if stg_val.payload.value == val:
+            print("Setting 'turn off level' programmed successfully!")
+        else:
+            print("Setting 'turn off level' programming failed!")
+
+    def load_all_settings_from_eeprom(self):
+        self.load_settings_from_eeprom()
+
+    def save_all_settings_to_eeprom(self):
+        self.save_settings_to_eeprom()
+    
+    #### Fundamental Functions ####
 
     def read_setting(self, setting):
         pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_READ, setting, 3, 3]))
-        if not pkt.valid:
-            log.error("Packet error: {}".format(pkt.byte_arr))
-            return
-        self.send_packet(pkt.byte_arr)
-        resp_pkt = Packet(byte_arr=self.read_response())
-        return resp_pkt.payload.value
+        resp_pkt = self._send_and_receive_packet(pkt)
+        return resp_pkt
 
     def write_setting(self, setting, val):
         pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_WRITE, setting, val & 0xFF, (val >> 8) & 0xFF]))
-        if not pkt.valid:
-            log.error("Packet error: {}".format(pkt.byte_arr))
-            return
-        self.send_packet(pkt.byte_arr)
-        resp_pkt = Packet(byte_arr=self.read_response())
-        return resp_pkt.payload.value
+        resp_pkt = self._send_and_receive_packet(pkt)
+        return resp_pkt
 
     def save_settings_to_eeprom(self, setting=None):
         if setting == None:
             # saving all settings
             pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_SAVE, SETTINGS_SAVE_ALL, 0, 0]))
-            if not pkt.valid:
-                log.error("Packet error: {}".format(pkt.byte_arr))
-                return
-            self.send_packet(pkt.byte_arr)
-            resp_pkt = Packet(byte_arr=self.read_response())
+            resp_pkt = self._send_and_receive_packet(pkt)
             return resp_pkt.payload.value
 
         else:
             pkt = Packet(payload_type=PYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_SAVE, SETTINGS_SAVE_ONE, setting & 0xFF, (setting >> 8) & 0xFF]))
-            if not pkt.valid:
-                log.error("Packet error: {}".format(pkt.byte_arr))
-                return
-            self.send_packet(pkt.byte_arr)
-            resp_pkt = Packet(byte_arr=self.read_response())
+            resp_pkt = self._send_and_receive_packet(pkt)
             return resp_pkt.payload.value
         
     def load_settings_from_eeprom(self, setting=None):
         if setting == None:
             # load all settings
             pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_LOAD, SETTINGS_LOAD_ALL, 0, 0]))
-            if not pkt.valid:
-                log.error("Packet error: {}".format(pkt.byte_arr))
-                return
-            self.send_packet(pkt.byte_arr)
-            resp_pkt = Packet(byte_arr=self.read_response())
+            resp_pkt = self._send_and_receive_packet(pkt)
             return resp_pkt.payload.value
 
         else:
             pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_LOAD, SETTINGS_LOAD_ONE, setting & 0xFF, (setting >> 8) & 0xFF]))
-            if not pkt.valid:
-                log.error("Packet error: {}".format(pkt.byte_arr))
-                return
-            self.send_packet(pkt.byte_arr)
-            resp_pkt = Packet(byte_arr=self.read_response())
+            resp_pkt = self._send_and_receive_packet(pkt)
             return resp_pkt.payload.value
 
     def get_status(self, status):
         pkt = Packet(payload_type=PAYLOAD_TYPE_STATUS, payload_data=bytes([STATUS_OP_READ, status, 2, 3]))
+        resp_pkt = self._send_and_receive_packet(pkt)
+        return resp_pkt.payload.value
+
+    def _send_and_receive_packet(self, pkt):
         if not pkt.valid:
             log.error("Packet error: {}".format(pkt.byte_arr))
             return
         self.send_packet(pkt.byte_arr)
         resp_pkt = Packet(byte_arr=self.read_response())
-        return resp_pkt.payload.value
-
+        return resp_pkt        
 
     def send_packet(self, pkt):
         self.clear_input_buffer()
