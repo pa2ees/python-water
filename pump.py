@@ -8,9 +8,30 @@ log = logging.getLogger(__name__)
 
 import serial, time, struct, math
 
+# TODO: Put these in the proper class instead of global
+
 PAYLOAD_TYPE_ECHO = 0
 PAYLOAD_TYPE_SETTINGS = 1
 PAYLOAD_TYPE_STATUS = 2
+
+SETTINGS_OP_LOAD = 0
+SETTINGS_OP_SAVE = 1
+SETTINGS_OP_WRITE = 2
+SETTINGS_OP_READ = 3
+
+SETTINGS_LOAD_ALL = 0
+SETTINGS_LOAD_ONE = 1
+
+SETTINGS_SAVE_ALL = 0
+SETTINGS_SAVE_ONE = 1
+
+SETTINGS_TANK_PUMP_TURN_ON_LEVEL = 0
+SETTINGS_TANK_PUMP_TURN_OFF_LEVEL = 1
+
+STATUS_OP_READ = 3
+
+STATUS_TEMP = 0
+STATUS_TANK_LEVEL = 1
 
 class Payload(object):
     """
@@ -195,43 +216,12 @@ class Packet(object):
         return False
 
 
-# TODO: move this functionality into the Pump class
-def handle_packet(packet):
-    if packet[1] == 0x00: #temperature packet
-        temperature = packet[8] * 256 + packet[7]
-        print("Temp:  {}".format(temperature))
-    elif packet[1] == 0x01: #Level packet
-        level = packet[8] * 256 + packet[7]
-        print("Level: {}".format(level))
-
-def get_pump_turn_on_level(ser):
-    pkt = create_packet([SETTINGS_OP_READ,SETTINGS_TANK_PUMP_TURN_ON_LEVEL,3,3], PACKET_TYPE_SETTINGS)
-
-SETTINGS_OP_LOAD = 0
-SETTINGS_OP_SAVE = 1
-SETTINGS_OP_WRITE = 2
-SETTINGS_OP_READ = 3
-
-SETTINGS_LOAD_ALL = 0
-SETTINGS_LOAD_ONE = 1
-
-SETTINGS_SAVE_ALL = 0
-SETTINGS_SAVE_ONE = 1
-
-SETTINGS_TANK_PUMP_TURN_ON_LEVEL = 0
-SETTINGS_TANK_PUMP_TURN_OFF_LEVEL = 1
-
-STATUS_OP_READ = 3
-
-STATUS_TEMP = 0
-STATUS_TANK_LEVEL = 1
-
 # TODO: Add conversions for temp (deg f) and level (in inches)
 # TODO: Clean up each of the functions to not repeat so much code.
 class Pump(object):
 
-    TANK_MIN_LEVEL_OFFSET=200
-    VTEMP_OFFSET=500
+    TANK_MIN_LEVEL_OFFSET=200 # level value offset with atmospheric pressure (ie no water)
+    VTEMP_OFFSET=500 # temperature value offset at 0 degrees
     
     def __init__(self, ser=None):
         self.ser = ser
@@ -362,60 +352,3 @@ class Pump(object):
         self.ser.flushInput()
 
 
-# class Pump_old():
-#     def __init__(self, com = None, ser = None):
-#         if not com:
-#             com = "COM4"
-#         if not ser:
-#             self.ser = serial.Serial(com, 9600, timeout=0.1)
-#         else:
-#             self.ser = ser
-
-#     def read_dump(self):
-#         print(self.ser.read(1000))
-
-#     def get_data_wait(self, wait_time = 5, retry_time = 1):
-#         for i in range(wait_time):
-#             if self.get_data() != -1:
-#                 return
-#             time.sleep(retry_time)
-            
-
-#     def write_data(self):
-#         #printval = '|'.join(self.valse['val01']
-#         print('writing: ', '|'.join(self.data_split))
-#         self.ser.write('|'.join(self.data_split))
-
-#     def get_data(self):
-#         self.data = self.ser.read(1000)
-#         if len(self.data) == 0:
-#             print("No Data!")
-#             return -1
-#         self.data_line = self.data.split("\r\n")
-#         if len(self.data_line) > 1:
-#             self.data_line = self.data_line[-2]
-#         else:
-#             self.data_line = self.data_line[0]
-#         self.data_split = self.data_line.split('|')
-#         if len(self.data_split) != 16:
-#             print("Bad Data!")
-#             return
-#         self.vals = {}
-#         self.vals['val01'] = self.data_split[0]
-#         self.vals['val02'] = self.data_split[1]
-#         self.vals['val03'] = self.data_split[2]
-#         self.vals['val04'] = self.data_split[3]
-#         self.vals['val05'] = self.data_split[4]
-#         self.vals['val06'] = self.data_split[5]
-#         self.vals['val07'] = self.data_split[6]
-#         self.vals['val08'] = self.data_split[7]
-#         self.vals['val09'] = self.data_split[8]
-#         self.vals['val10'] = self.data_split[9]
-#         self.vals['val11'] = self.data_split[10]
-#         self.vals['val12'] = self.data_split[11]
-#         self.vals['val13'] = self.data_split[12]
-#         self.vals['val14'] = self.data_split[13]
-#         self.vals['val15'] = self.data_split[14]
-#         self.vals['val16'] = self.data_split[15]
-            
-        
