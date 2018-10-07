@@ -6,7 +6,7 @@ logging.basicConfig(level=log_level, format = '%(asctime)s  %(levelname)-10s %(n
 log = logging.getLogger(__name__)
 
 
-import serial, time, struct
+import serial, time, struct, math
 
 PAYLOAD_TYPE_ECHO = 0
 PAYLOAD_TYPE_SETTINGS = 1
@@ -229,6 +229,10 @@ STATUS_TANK_LEVEL = 1
 # TODO: Add conversions for temp (deg f) and level (in inches)
 # TODO: Clean up each of the functions to not repeat so much code.
 class Pump(object):
+
+    TANK_MIN_LEVEL_OFFSET=200
+    VTEMP_OFFSET=500
+    
     def __init__(self, ser=None):
         self.ser = ser
         if not ser:
@@ -242,38 +246,39 @@ class Pump(object):
     #### Helper functions ####
 
     def read_curr_temp(self):
-        val = self.get_status(STATUS_TEMP)
-        # do conversion to degrees f here
-        return val
+        resp_pkt = self.get_status(STATUS_TEMP)
+        return self._conv_temp_to_f(resp_pkt.payload.value)
 
     def read_tank_level(self):
-        val = self.get_status(STATUS_TANK_LEVEL)
-        # do conversion to inches here
-        return val
-
+        resp_pkt = self.get_status(STATUS_TANK_LEVEL)
+        return self._conv_tank_level_to_inches(resp_pkt.payload.value)
 
     def read_setting_tank_pump_turn_on_level(self):
-        val = self.read_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL)
-        # do conversion to inches here
-        return val.payload.value
+        resp_pkt = self.read_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL)
+        return self._conv_tank_level_to_inches(resp_pkt.payload.value)
 
     def read_setting_tank_pump_turn_off_level(self):
-        val = self.read_setting(SETTINGS_TANK_PUMP_TURN_OFF_LEVEL)
-        # do conversion to inches here
-        return val.payload.value
+        resp_pkt = self.read_setting(SETTINGS_TANK_PUMP_TURN_OFF_LEVEL)
+        return self._conv_tank_level_to_inches(resp_pkt.payload.value)
 
-    def write_setting_tank_pump_turn_on_level(self, val):
-        #do conversion from inches here
-        stg_val = self.write_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL, val)
-        if stg_val.payload.value == val:
+    def write_setting_tank_pump_turn_on_level(self, inches):
+        tank_level = self._conv_inches_to_tank_level(inches)
+        if tank_level < self.TANK_MIN_LEVEL_OFFSET:
+            tank_level = self.TANK_MIN_LEVEL_OFFSET
+        log.info("Setting turn on level to {}".format(tank_level))
+        resp_pkt = self.write_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL, tank_level)
+        if resp_pkt.payload.value == tank_level:
             print("Setting 'turn on level' programmed successfully!")
         else:
             print("Setting 'turn on level' programming failed!")
 
-    def write_setting_tank_pump_turn_off_level(self, val):
-        #do conversion from inches here
-        stg_val = self.write_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL, val)
-        if stg_val.payload.value == val:
+    def write_setting_tank_pump_turn_off_level(self, inches):
+        tank_level = self._conv_inches_to_tank_level(inches)
+        if tank_level < self.TANK_MIN_LEVEL_OFFSET:
+            tank_level = self.TANK_MIN_LEVEL_OFFSET
+        log.info("Setting turn off level to {}".format(tank_level))
+        resp_pkt = self.write_setting(SETTINGS_TANK_PUMP_TURN_OFF_LEVEL, tank_level)
+        if resp_pkt.payload.value == tank_level:
             print("Setting 'turn off level' programmed successfully!")
         else:
             print("Setting 'turn off level' programming failed!")
@@ -283,7 +288,19 @@ class Pump(object):
 
     def save_all_settings_to_eeprom(self):
         self.save_settings_to_eeprom()
+
+    def _conv_temp_to_f(self, temp):
+        temp_f = round(((temp - self.VTEMP_OFFSET) / 10.0)*(9.0/5.0) + 32)
+        return temp_f
     
+    def _conv_tank_level_to_inches(self, tank_level):
+        tank_level_in = round((tank_level - self.TANK_MIN_LEVEL_OFFSET) / 45 * 4)
+        return tank_level_in
+
+    def _conv_inches_to_tank_level(self, inches):
+        tank_level = round((inches / 4 * 45) + self.TANK_MIN_LEVEL_OFFSET)
+        return tank_level
+
     #### Fundamental Functions ####
 
     def read_setting(self, setting):
@@ -301,29 +318,29 @@ class Pump(object):
             # saving all settings
             pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_SAVE, SETTINGS_SAVE_ALL, 0, 0]))
             resp_pkt = self._send_and_receive_packet(pkt)
-            return resp_pkt.payload.value
+            return resp_pkt
 
         else:
             pkt = Packet(payload_type=PYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_SAVE, SETTINGS_SAVE_ONE, setting & 0xFF, (setting >> 8) & 0xFF]))
             resp_pkt = self._send_and_receive_packet(pkt)
-            return resp_pkt.payload.value
+            return resp_pkt
         
     def load_settings_from_eeprom(self, setting=None):
         if setting == None:
             # load all settings
             pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_LOAD, SETTINGS_LOAD_ALL, 0, 0]))
             resp_pkt = self._send_and_receive_packet(pkt)
-            return resp_pkt.payload.value
+            return resp_pkt
 
         else:
             pkt = Packet(payload_type=PAYLOAD_TYPE_SETTINGS, payload_data=bytes([SETTINGS_OP_LOAD, SETTINGS_LOAD_ONE, setting & 0xFF, (setting >> 8) & 0xFF]))
             resp_pkt = self._send_and_receive_packet(pkt)
-            return resp_pkt.payload.value
+            return resp_pkt
 
     def get_status(self, status):
         pkt = Packet(payload_type=PAYLOAD_TYPE_STATUS, payload_data=bytes([STATUS_OP_READ, status, 2, 3]))
         resp_pkt = self._send_and_receive_packet(pkt)
-        return resp_pkt.payload.value
+        return resp_pkt
 
     def _send_and_receive_packet(self, pkt):
         if not pkt.valid:
