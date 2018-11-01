@@ -61,14 +61,16 @@ class Payload(object):
 
         # got byte_array.  If a settings or status packet, populate opcode, command, and value
         elif self.byte_arr != None:
+            log.debug("Got byte arr")
             if self.length != len(self.byte_arr):
                 log.error("Length given ({}) and length of array ({}) do not match!".format(self.length, len(self.byte_arr)))
                 return
             if self.pl_type == PAYLOAD_TYPE_SETTINGS or self.pl_type == PAYLOAD_TYPE_STATUS:
+                log.debug("Got settings or status payload of length: {}".format(self.length))
                 if self.length != 4:
                     log.error("Incorrect array length ({}) for payload type ({})".format(self.length, self.pl_type))
                     return
-                (self.opcode, self.command, self.value) = struct.unpack('<BBH', self.byte_arr)
+                self.opcode, self.command, self.value = struct.unpack('<BBH', self.byte_arr)
             self.valid = True
 
         # compute checksum
@@ -87,7 +89,7 @@ class Packet(object):
     PACKET_PAYLOAD_LEN_OFFSET = 3
     PACKET_PAYLOAD_TYPE_OFFSET = 4
     PACKET_HEADER_CHECKSUM_OFFSET = 6
-    PACKET_PAYLOAD_OFFSET = 8
+    PACKET_PAYLOAD_OFFSET = 7
     
     def __init__(self, dest_addr=None, src_addr=None, payload_type=None, payload=None, payload_data=None, byte_arr=None):
         self.dest_addr = dest_addr
