@@ -87,7 +87,7 @@ class Packet(object):
     PACKET_DEST_ADDR_OFFSET = 1
     PACKET_SRC_ADDR_OFFSET = 2
     PACKET_PAYLOAD_LEN_OFFSET = 3
-    PACKET_PAYLOAD_TYPE_OFFSET = 4
+    PACKET_PAYLOAD_TYPE_OFFSET = 5
     PACKET_HEADER_CHECKSUM_OFFSET = 6
     PACKET_PAYLOAD_OFFSET = 7
     
@@ -149,11 +149,11 @@ class Packet(object):
         if not valid:
             return False
         
-        self.payload_type = self.byte_arr[self.PACKET_PAYLOAD_TYPE_OFFSET]
-
         self.dest_addr = struct.unpack_from('<B', self.byte_arr, self.PACKET_DEST_ADDR_OFFSET)[0]
         self.src_addr = struct.unpack_from('<B', self.byte_arr, self.PACKET_SRC_ADDR_OFFSET)[0]
         self.payload_len = struct.unpack_from('<H', self.byte_arr, self.PACKET_PAYLOAD_LEN_OFFSET)[0]
+        self.payload_type = struct.unpack_from('<B', self.byte_arr, self.PACKET_PAYLOAD_TYPE_OFFSET)[0]
+        log.debug("Payload Type: {}".format(self.payload_type))
         self.payload_data = self.byte_arr[self.PACKET_PAYLOAD_OFFSET:self.PACKET_PAYLOAD_OFFSET+self.payload_len]
         self.payload = Payload(self.payload_len, self.payload_type, payload_byte_arr=self.payload_data)
         if not self.payload.valid:
