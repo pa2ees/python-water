@@ -25,8 +25,9 @@ SETTINGS_LOAD_ONE = 1
 SETTINGS_SAVE_ALL = 0
 SETTINGS_SAVE_ONE = 1
 
-SETTINGS_TANK_PUMP_TURN_ON_LEVEL = 0
-SETTINGS_TANK_PUMP_TURN_OFF_LEVEL = 1
+SETTINGS_ADDRESS = 0
+SETTINGS_TANK_PUMP_TURN_ON_LEVEL = 1
+SETTINGS_TANK_PUMP_TURN_OFF_LEVEL = 2
 
 STATUS_OP_READ = 3
 
@@ -265,6 +266,10 @@ class Pump(object):
         resp_pkt = self.get_status(STATUS_TANK_LEVEL)
         return self._conv_tank_level_to_inches(resp_pkt.payload.value)
 
+    def read_setting_address(self):
+        resp_pkt = self.read_setting(SETTINGS_ADDRESS)
+        return resp_pkt.payload.value
+
     def read_setting_tank_pump_turn_on_level(self):
         resp_pkt = self.read_setting(SETTINGS_TANK_PUMP_TURN_ON_LEVEL)
         return self._conv_tank_level_to_inches(resp_pkt.payload.value)
@@ -272,6 +277,14 @@ class Pump(object):
     def read_setting_tank_pump_turn_off_level(self):
         resp_pkt = self.read_setting(SETTINGS_TANK_PUMP_TURN_OFF_LEVEL)
         return self._conv_tank_level_to_inches(resp_pkt.payload.value)
+
+    def write_setting_address(self, address):
+        log.warning("Setting new address! Further communication with this node must use new address!")
+        resp_pkt = self.write_setting(SETTINGS_ADDRESS, address)
+        if resp_pkt.payload.value == address:
+            print("Setting address succesful! Remember to save to eeprom!")
+        else:
+            print("Setting address failed!")
 
     def write_setting_tank_pump_turn_on_level(self, inches):
         tank_level = self._conv_inches_to_tank_level(inches)
