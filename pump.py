@@ -1,6 +1,6 @@
 import logging
 
-log_level = logging.DEBUG
+log_level = logging.INFO
 logging.basicConfig(level=log_level, format = '%(asctime)s  %(levelname)-10s %(name)s %(message)s', datefmt =  "%Y-%m-%d-%H-%M-%S")
 
 log = logging.getLogger(__name__)
@@ -233,7 +233,7 @@ class Packet(object):
             elif state == "got_checksum":
                 packet.append(val) # appended end byte
                 if val == 0xBA:
-                    log.debug("Got full packet!".format())
+                    log.debug("Got full packet!")
                     log.debug(" ".join(["{:X}".format(val) for val in packet]))
                     state = "idle"
                     return True
