@@ -233,7 +233,7 @@ class Packet(object):
             elif state == "got_checksum":
                 packet.append(val) # appended end byte
                 if val == 0xBA:
-                    log.debug("Got full packet!")
+                    log.debug("Got full packet!".format())
                     log.debug(" ".join(["{:X}".format(val) for val in packet]))
                     state = "idle"
                     return True
@@ -261,7 +261,9 @@ class Pump(object):
             self.ser = serial.Serial("/dev/ttyUSB0", baudrate=57600, timeout=0.1)
 
     def echo(self, src_addr=0x00, data_arr=b'abc'):
-        pkt = Packet(dest_addr=self.addr, src_addr=self.src_addr, payload_type=PAYLOAD_TYPE_ECHO, payload_data=data_arr)
+        if src_addr == 0x00:
+            src_addr = self.src_addr
+        pkt = Packet(dest_addr=self.addr, src_addr=src_addr, payload_type=PAYLOAD_TYPE_ECHO, payload_data=data_arr)
         resp_pkt = self._send_and_receive_packet(pkt)
         return resp_pkt.payload_data
 
@@ -436,6 +438,7 @@ class Pump(object):
             return
         self.send_packet(pkt.byte_arr)
         resp_pkt = Packet(byte_arr=self.read_response())
+        log.debug("Got Packet from address {}".format(resp_pkt.src_addr))
         return resp_pkt        
 
     def send_packet(self, pkt):
